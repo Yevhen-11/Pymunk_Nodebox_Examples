@@ -67,48 +67,54 @@ def strategy(b=s3.body):
         else:
             b.angle=getAngle(x,y,*s1.body.position) #2*math.pi*random.random()
 
+def dynamicState(b=s3.body):
+    # Розрахунок відстаней і кутів до цільових точок
+    pos_x, pos_y = b.position
+    distance_to_s1 = getDist(pos_x, pos_y, s1.body.position[0], s1.body.position[1])
+    distance_to_s2 = getDist(pos_x, pos_y, S2[0].body.position[0], S2[0].body.position[1])
+    angle_to_s1 = getAngle(pos_x, pos_y, s1.body.position[0], s1.body.position[1])
+    angle_to_s2 = getAngle(pos_x, pos_y, S2[0].body.position[0], S2[0].body.position[1])
+    return (distance_to_s1, distance_to_s2, angle_to_s1, angle_to_s2, b.angle)
+
 def strategy2(b=s3.body):
-    u"""Стратегія робота, який сканує сектор ультразвуковим сенсором, з реалізацією найпростішого машинного навчаннм з підкріпленням (Q-learning). Кожні 10 кадрів визначається чи обєкти s1 або s2 знаходяться в межах сектора. Якщо це s1 то стан=об'єкт. Якщо це s2 то стан= антиоб'єкт. Якщо нічого, то стан=нічого.  Установлюється стан і винагорода. В Q-таблиці (див.) оновлюється сума винагород, яка відповдає стану і дії. Дія 0 - залишати напрямок, 1 - змінювати (випадковий кут). Далі алгоритм вибирає дію. З заданими імовірностями дія може бути випадковою або відповідати дії з максимальною сумою винагород для цього стану (оптимальною). Далі дія виконується. Вкінці алгоритм запобігає виїзду робота за межі кола."""
-    v=100
-    a=b.angle
-    b.velocity=v*cos(a), v*sin(a)
-    x,y=b.position
-    R=getDist(x,y,350,250)
-    ellipse(x, y, 200, 200, stroke=Color(0.5))
-    #line(x,y,x+100*cos(a),y+100*sin(a),stroke=Color(0.5))
-    line(x,y,x+100*cos(a+0.5),y+100*sin(a+0.5),stroke=Color(0.5))
-    line(x,y,x+100*cos(a-0.5),y+100*sin(a-0.5),stroke=Color(0.5))
+    velocity = 100
+    current_angle = b.angle
+    b.velocity = velocity * cos(current_angle), velocity * sin(current_angle)
+    position_x, position_y = b.position
+    boundary_distance = getDist(position_x, position_y, 350, 250)
+    
+    ellipse(position_x, position_y, 200, 200, stroke=Color(0.5))
 
-    if canvas.frame%10==0: # кожні n кадірів
-        inS=inSector(s1.body.position[0], s1.body.position[1], x, y, 100, a)
-        inS2=inSector(S2[0].body.position[0], S2[0].body.position[1], x, y, 100, a)
+    if canvas.frame % 10 == 0:  # виконуємо кожні 10 кадрів
+        is_in_s1_sector = inSector(s1.body.position[0], s1.body.position[1], position_x, position_y, 100, current_angle)
+        is_in_s2_sector = inSector(S2[0].body.position[0], S2[0].body.position[1], position_x, position_y, 100, current_angle)
 
-        # установлюємо стан і винагороду
-        if inS:
-            state=1
-            reward=1 if b.action==0 else -1
-        elif inS2:
-            state=2
-            reward=-1 if b.action==0 else 1
+        # Встановлення стану робота на основі поточних даних
+        current_state = dynamicState(b)
+        reward_value = 0
+
+        if is_in_s1_sector:
+            reward_value = 1 if b.action == 0 else -1
+        elif is_in_s2_sector:
+            reward_value = -1 if b.action == 0 else 1
+
+        learning_rate = 0.1  # швидкість навчання для алгоритму
+        b.Q[current_state][b.action] += learning_rate * (reward_value + np.max(b.Q[current_state]) - b.Q[current_state][b.action])
+        print(current_state, b.action, b.Q)
+
+        # Вибір дії: випадкова дія або найкраща відповідно до Q-таблиці
+        exploration_chance = 0.1  # ймовірність випадкової дії
+        if random.random() < exploration_chance:
+            b.action = random.choice([0, 1])
         else:
-            state=0; reward=0
-        b.Q[state][b.action] +=reward # оновлюємо Q таблицю
-        print state, b.action, b.Q
+            b.action = np.argmax(b.Q[current_state])
 
-        # вибираємо дію
-        #if random.choice([1, 0, 0]): # деколи випадково
-        #if random.random()<0.1:
-        act=b.Q[state][b.action]
-        if random.random()<abs(1.0/(act+0.1)): # 0.1 запобігає /0
-            b.action=random.choice([0, 1]) # випадково 50/50
-        else:
-            b.action=np.argmax(b.Q[state]) # залишати чи змінювати?
+        if b.action:  # При необхідності змінюємо напрямок
+            b.angle += random.uniform(-math.pi/4, math.pi/4)  # Зміна на випадковий кут
 
-        if b.action: # якщо змінювати
-            b.angle=2*math.pi*random.random()
+        if boundary_distance > 180:  # Перевірка межі кола
+            b.angle = getAngle(position_x, position_y, 350, 250)
 
-        if R>180: # запобігти виїзду за межі
-            b.angle=getAngle(x,y,350,250)
 
 def scr(s,s0,s3,p=1):
     bx,by=s.body.position
